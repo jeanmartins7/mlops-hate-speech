@@ -1,0 +1,8 @@
+.idea
+.venv
+.ipynb_checkpoints
+src/main/terraform/.terraform
+src/main/terraform/terraform.tfstate.backup
+src/main/terraform/.terraform.lock.hcl
+src/main/resource/env/ec2/pem/*
+src/main/terraform/.terraform.tfstate.lock.info
