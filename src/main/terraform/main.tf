@@ -3,13 +3,13 @@ data "aws_vpc" "default_vpc"{
   default = true
 }
 
-data "aws_ami" "amazon_linux_2" {
+data "aws_ami" "amazon_linux_latest" {
   most_recent = true
   owners      = ["amazon"]
 
   filter {
     name   = "name"
-    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+    values = ["al2023-ami-*-kernel-6.1-x86_64"]
   }
 
   filter {
@@ -123,25 +123,38 @@ resource "aws_security_group" "ec2_security_group" {
 }
 
 resource "aws_instance" "mlops_compute_instance" {
-  ami                    = data.aws_ami.amazon_linux_2.id
+  ami                    = data.aws_ami.amazon_linux_latest.id
   instance_type          = "t2.micro"
   key_name               = aws_key_pair.mlops_key_pair.key_name
   security_groups        = [aws_security_group.ec2_security_group.name]
   iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
 
-user_data = <<-EOF
+  root_block_device {
+    volume_size = 30
+    volume_type = "gp2"
+    delete_on_termination = true
+  }
+
+      user_data = <<-EOF
               #!/bin/bash
-              set -e
+              set -e # Sai imediatamente se qualquer comando falhar
+
+              exec > >(tee /var/log/custom-user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+
+              echo "Iniciando configuração de dependências Python..."
 
               echo "Atualizando pacotes do sistema..."
-              sudo yum update -y
+              sudo timeout 300 bash -c "while fuser /var/run/yum.pid >/dev/null 2>&1; do echo 'Waiting for another yum process to finish...'; sleep 10; done; yum update -y"
+
+              echo "Instalando git e python3-pip..."
               sudo yum install -y python3-pip git -y
 
               echo "Instalando bibliotecas Python via pip3..."
               sudo pip3 install --upgrade pip
 
-              # Usamos sudo e especificamos versões para maior compatibilidade com Amazon Linux 2 (Python 3.7/3.8)
               sudo python3 -m pip install \
+                  urllib3==1.26.18 \
+                  requests==2.25.1 \
                   pandas==1.3.5 \
                   numpy==1.21.6 \
                   scikit-learn==1.0.2 \
@@ -149,12 +162,23 @@ user_data = <<-EOF
                   transformers==4.26.1 \
                   datasets==2.13.2 \
                   nltk==3.8.1 \
-                  --no-cache-dir # Evita problemas com cache
+                  huggingface-hub==0.11.1 \
+                  --no-cache-dir
 
-              echo "Baixando modelos NLTK..."
-              sudo python3 -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet')"
+              echo "Verificando se as principais bibliotecas foram instaladas..."
+              python3 -c "import pandas; import numpy; import sklearn; import transformers; import torch; import datasets; import nltk; print('PYTHON_LIBS_INSTALLED_SUCCESSFULLY')"
 
-              echo "Instalação e configuração concluídas."
+              if [ $? -eq 0 ]; then
+                  echo "Bibliotecas Python verificadas com sucesso. Prosseguindo com downloads NLTK."
+                  echo "Baixando modelos NLTK..."
+                  sudo python3 -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet')"
+                  echo "Downloads NLTK concluídos."
+              else
+                  echo "ERRO: Falha na verificação das bibliotecas Python."
+                  exit 1
+              fi
+
+              echo "Configuração de dependências concluída com sucesso!"
               EOF
 
   tags = {

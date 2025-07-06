@@ -4,5 +4,7 @@
 src/main/terraform/.terraform
 src/main/terraform/terraform.tfstate.backup
 src/main/terraform/.terraform.lock.hcl
-src/main/resource/env/ec2/pem/*
+src/main/resource/env/ec2/pem/id_rsa_terraform-ec2-key.pub
 src/main/terraform/.terraform.tfstate.lock.info
+venv
+.python-version
